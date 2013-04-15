@@ -1,0 +1,93 @@
+#!/usr/bin/perl
+#
+#Custom fingerd for rt3
+#Implements IP checking
+
+use Net::IPv4Addr qw( :all );
+
+
+#############IP ACCESS CONTROL##############
+@acl = ('192.168.1.0/24','172.16.20.0/24');
+############################################
+
+$arg = <>;
+exit if ( $arg =~ /[\[\]@^;*!\$&]/);
+undef(%ENV);
+
+$addr = getpeername(STDIN);
+die "Can not be executed locally\n" unless ($addr);
+($family, $port, $addr) = unpack ('S n a4 x8', $addr);
+(@addr) = unpack ("C4", $addr);
+$ipaddress = join ('.',@addr);
+
+#Load in map.ip for usernames
+open (MAPIP,"< /opt/rtfinger/map.ip");
+while (<MAPIP>) {
+	unless ($_=~m/^#(.*)/) {
+		my ($mapipip,$mapipuser)=split(/\t/,$_);
+		$mapuser=$mapipuser if ($mapipip eq $ipaddress);
+	}
+}
+close (MAPIP);
+
+$mapuser="nobody" unless ($mapuser);
+$ENV{'MAPUSER'} = $mapuser;
+
+foreach $aclelement (@acl) {
+
+	$access_granted = "YAY" if ( ipv4_in_network( $aclelement, $ipaddress ) );
+
+}
+
+
+if ($access_granted) {
+
+	unless ($arg=~m/(\w+)/) {
+
+		print "\n\nrt3fingerd - usage instructions:\n";
+		print "\n";
+		print "Ticket Operations:\n";
+		print "-------------------------------------------------------------------\n";
+		print "finger [ticket-id]\@rt3.hostname - To display a ticket detail\n";
+		print "finger r[ticket-id]\@rt3.hostname - To resolve a ticket\n";
+		print "finger n[ticket-id]\@rt3.hostname - To new a ticket\n";
+		print "finger R[ticket-id]\@rt3.hostname - To reject a ticket\n";
+		print "finger d[ticket-id]\@rt3.hostname - To delete a ticket\n";
+		print "finger s[ticket-id]\@rt3.hostname - To stall a ticket\n";
+		print "finger t[ticket-id][queue]\@rt3.hostname - To transfer Queue\n";
+		print "finger T[ticket-id][user]\@rt3.hostname - To transfer ownership\n";
+		print "\n";
+		print "List Operations:\n";	
+		print "-------------------------------------------------------------------\n";
+		print "finger q[queue]\@rt3.hostname - To list the contents of a queue\n";
+		print "finger Q[queue]\@rt3.hostname - To list the contents of a queue (Show ALL)\n";
+		print "finger u[user]\@rt3.hostname - To list the tickets owned by a user\n";
+		print "finger U[user]\@rt3.hostname - To list the tickets owned by a user (Show ALL)\n";
+		print "finger m[user]\@rt3.hostname - To list the queues that the user has membership of\n";
+		print "finger M[queue]\@rt3.hostname - To list the users that the queue has membership of\n";
+		print "finger w[user]\@rt3.hostname - To list the tickets worked on by a user\n";
+		print "finger W[user]\@rt3.hostname - To list the tickets worked on by a user (Show ALL)\n";
+		print "finger lqueues\@rt3.hostname - To list all Queues on the system\n";
+		print "finger lusers\@rt3.hostname - To list all Interface users on the system\n";
+		print "\n";
+		exit;
+
+	}
+
+	else {
+		if ($arg =~ m/gimme/ ) {
+			print "**DUMP**\n\n\n";
+			print "\$( = $( - \$) = $) - \$< = $< - \$> = $>\n\n";
+			foreach $key (sort keys %ENV) {
+				print "$key = $ENV{$key}\n";
+			}
+			exit;
+		}
+
+	}
+}
+else
+{
+	print "Access Denied";
+	exit;
+}

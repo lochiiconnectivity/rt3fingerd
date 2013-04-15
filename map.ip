@@ -1,0 +1,9 @@
+#Map.ip.
+#Used by rt3fingerd to map systems IPs to usernames.
+#
+#Format:
+#
+#IP<tab>Username
+#
+192.168.1.2	test.user
+172.16.20.4	robert.smith

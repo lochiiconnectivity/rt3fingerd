@@ -1,0 +1,350 @@
+#!/usr/bin/perl
+#
+# rt3cli - the backend of rt3fingerd
+#
+# davef - Jun04
+#
+
+use Date::Manip;
+$date=`date`;
+$rtdate=`date "+\%Y-\%m-\%d \%H:\%M:\%S"`;
+chomp ($rtdate);
+
+select(STDOUT); $|=1;
+
+use DBI;
+
+my $database;
+my $hostname;
+my $user;
+my $password;
+
+
+$hostname = "my.db.host.name";
+$user = "dbuser";
+$password = "dbpass";
+
+
+my $port = '';
+my $privgid = '4';
+my $pkgmntaddr = "david.freedman@uk.clara.net";
+
+my $dsn = "DBI:mysql:database=$database;host=$hostname;port=$port";
+my $dbh = DBI->connect($dsn, 
+                        $user, 
+                        $password,
+                        {'RaiseError' => 1});
+
+
+
+format UserTopTemplate =
+
+
+New or Open tickets for @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+$ticketsfor
+
+ Id      Status    Last Updated        Queue      Subject
+ ======  ========= =================== ========== ===============================
+.
+
+format UserTemplate =
+ @<<<<<< @<<<<<<<< @<<<<<<<<<<<<<<<<<< @<<<<<<<<< ^<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+ $ary[0],$ary[1],$ary[2],            $ary[3],   $ary[5]
+~~                                                ^<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+        		                        $ary[5]
+ --------------------------------------------------------------------------------
+.
+
+format QueueTopTemplate =
+
+
+New or Open tickets for @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+$ticketsfor
+
+ Id      Status    Last Updated        User       Subject
+ ======  ========= =================== ========== ===============================
+.
+
+format QueueTemplate =
+ @<<<<<< @<<<<<<<< @<<<<<<<<<<<<<<<<<< @<<<<<<<<< ^<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+ $ary[0],$ary[1],$ary[2],            $ary[4],   $ary[5]
+~                                                 ^<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+                                                $ary[5]
+ --------------------------------------------------------------------------------
+.
+
+
+#Get args
+$param = $ARGV[0];	
+
+#Get user
+$mapuser=$ENV{'MAPUSER'};
+$mapuser='nobody' unless ($mapuser);
+$query = "select id from Users where Name='$mapuser'";
+$sth = $dbh->prepare($query) or die "Can't prepare mapuser query";
+$sth->execute || die "Can't execute statement: $DBI::errstr";
+$mapuid = $sth->fetchrow_array;
+
+
+
+$ticketstatustolookfornormal = "and Tickets.Status!='Resolved' and Tickets.Status!='Rejected' and Tickets.Status!='Deleted'";
+
+if ($param=~m/^u.*/) { $ticketstatustolookfor = $ticketstatustolookfornormal };
+if ($param=~m/^w.*/) { $ticketstatustolookfor = $ticketstatustolookfornormal };
+if ($param=~m/^q.*/) { $ticketstatustolookfor = $ticketstatustolookfornormal };
+
+if ($param=~m/^(u|U)(.*)/) {
+	$ticketsfor=$2;
+	&dienice unless $ticketsfor;
+	$query = "select Tickets.id, Tickets.Status, Tickets.LastUpdated, Queues.Name, Users.name, Tickets.Subject from Tickets,Queues,Users where Tickets.Queue=Queues.id and Tickets.Owner=Users.id and Users.Name='$ticketsfor' $ticketstatustolookfor order by Tickets.LastUpdated;";
+	$sth = $dbh->prepare($query) or die "Can't prepare queue query";
+	$rc = $sth->execute || die "Can't execute statement: $DBI::errstr";
+
+my $privgid = '4';
+	while (@ary = $sth->fetchrow_array) {
+        	$updateddate= ParseDate($ary[2]);
+        	$ary[2]=DateCalc($date,$updateddate,\$err,1);
+       		$ary[2]=~s/-(\d+)\:(\d+)\:(\d+)\:(\d+)\:(\d+)\:(\d+)\:(\d+)/${2}m${3}w${4}d - ${5}h${6}m$7{s}/g;
+		$^ = 'UserTopTemplate';
+		$~ = 'UserTemplate';
+        	write;
+	}
+
+	$dbh->disconnect;
+
+
+}
+elsif ($param=~m/^(w|W)(.*)/) {
+        $ticketsfor=$2;
+	&dienice unless $ticketsfor;
+	$query = "select distinct Tickets.id, Tickets.Status, Tickets.LastUpdated, Queues.Name, Users.name, Tickets.Subject from Users inner join Transactions on (Users.id = Transactions.creator) inner join Tickets on (Transactions.ObjectId = Tickets.id) inner join Queues on (Tickets.queue = Queues.id) where Users.Name='$ticketsfor' $ticketstatustolookfor order by Tickets.LastUpdated;";
+        $sth = $dbh->prepare($query) or die "Can't prepare queue query";
+        $rc = $sth->execute || die "Can't execute statement: $DBI::errstr";
+
+my $privgid = '4';
+        while (@ary = $sth->fetchrow_array) {
+                $updateddate= ParseDate($ary[2]);
+                $ary[2]=DateCalc($date,$updateddate,\$err,1);
+                $ary[2]=~s/-(\d+)\:(\d+)\:(\d+)\:(\d+)\:(\d+)\:(\d+)\:(\d+)/${2}m${3}w${4}d - ${5}h${6}m$7{s}/g;
+                $^ = 'UserTopTemplate';
+                $~ = 'UserTemplate';
+                write;
+        }
+
+        $dbh->disconnect;
+
+}
+
+
+elsif ($param=~m/^(q|Q)(.*)/) {
+	$ticketsfor=$2;
+	&dienice unless $ticketsfor;
+	$query = "select Tickets.id, Tickets.Status, Tickets.LastUpdated, Queues.Name, Users.name, Tickets.Subject from Tickets,Queues,Users where Tickets.Queue=Queues.id and Tickets.Owner=Users.id and Queues.Name='$ticketsfor' $ticketstatustolookfor order by Tickets.LastUpdated;";
+
+        $sth = $dbh->prepare($query) or die "Can't prepare queue query";
+        $rc = $sth->execute || die "Can't execute statement: $DBI::errstr";
+
+        while (@ary = $sth->fetchrow_array) {
+                $updateddate= ParseDate($ary[2]);
+                $ary[2]=DateCalc($date,$updateddate,\$err,1);
+                 $ary[2]=~s/-(\d+)\:(\d+)\:(\d+)\:(\d+)\:(\d+)\:(\d+)\:(\d+)/${2}m${3}w${4}d - ${5}h${6}m$7{s}/g;
+		$^ = "QueueTopTemplate";
+		$~ = "QueueTemplate";
+                write;
+        }
+
+        $dbh->disconnect;
+
+
+
+
+}
+elsif ($param=~m/^l(.*)$/) {
+
+	&dienice unless $1;
+	if ($1 eq 'queues') {
+		print "\nList of all Queues:\n";
+		print "------------------------------------------------------------------\n";
+		$query = "select Name from Queues order by Name;";
+		$bonefide="true";
+	}
+	elsif ($1 eq 'users') {
+                print "\nList of all Users:\n";
+                print "------------------------------------------------------------------\n";
+		$query = "select Users.Name from GroupMembers inner join Users on GroupMembers.MemberId = Users.id where GroupMembers.GroupId ='4' order by Users.Name;";
+		$bonefide="true";
+	}
+
+	if ($bonefide) {
+	
+		$sth = $dbh->prepare($query) or die "Can't prepare queue query";
+     		$rc = $sth->execute || die "Can't execute statement: $DBI::errstr";
+
+		while (@ary = $sth->fetchrow_array) {
+			print "@ary[0]\n" unless (($ary[0]=~m/\_/) || ($ary[0]=~m/root/));
+		}
+
+		$dbh->disconnect;
+	}
+	else {
+
+		print "$1: not understood\n";
+	}
+}
+
+
+elsif ($param=~m/^m(.*)/) {
+
+	&dienice unless $1;
+	print "Group Membership Listing for User $1\n";
+	print "----------------------------------------------\n";
+	$query = "select distinct Groups.Name from Groups inner join GroupMembers on (Groups.id = GroupMembers.GroupID) inner join Users on (GroupMembers.MemberID = Users.id) where Users.name = '$1' and not isNull(Groups.Name) and Groups.Name not like 'User \%';";
+	$sth = $dbh->prepare($query) or die "Can't prepare membership query";
+	$rc = $sth->execute || die "Can't execute statement: $DBI::errstr";
+	
+	while (@ary = $sth->fetchrow_array) {
+		print "@ary[0]\n" unless (($ary[0]=~m/\_/) || ($ary[0]=~m/^$/));
+	}
+}
+
+elsif ($param=~m/^M(.*)/) {
+	
+	&dienice unless $1;
+	print "User Membership Listing for Group $1\n";
+	print "----------------------------------------------\n";
+	$query = "select distinct Users.Name from Groups inner join GroupMembers on (Groups.id = GroupMembers.GroupID) inner join Users on (GroupMembers.MemberID = Users.id) where Groups.name = '$1';";
+        $sth = $dbh->prepare($query) or die "Can't prepare membership query";
+        $rc = $sth->execute || die "Can't execute statement: $DBI::errstr";
+
+        while (@ary = $sth->fetchrow_array) {
+                print "@ary[0]\n" unless (($ary[0]=~m/\_/) || ($ary[0]=~m/^$/));
+        }
+}
+
+
+elsif ($param=~m/^r(.*)/) {
+	&dienice unless $1;
+	print "Resolving Ticket $1\n";
+        $query = "update Tickets set Status='resolved' where id=$1;";
+	my $sth = $dbh->prepare($query) or die "Can't prepare queue query";
+	my $rc = $sth->execute || die "Can't execute statement: $DBI::errstr";
+	$tquery = "insert into Transactions values('',$1,0,'Status','Status','open','resolved','','$mapuid','$rtdate','RT::Ticket',NULL,NULL,NULL)";
+        $sth = $dbh->prepare($tquery) or die "Can't prepare queue query";
+        $rc = $sth->execute || die "Can't execute statement: $DBI::errstr";
+}
+elsif ($param=~m/^n(.*)/) {
+	&dienice unless $1;
+        print "NEWing Ticket $1\n";
+        $query = "update Tickets set Status='new' where id=$1;";
+        my $sth = $dbh->prepare($query) or die "Can't prepare queue query";
+        my $rc = $sth->execute || die "Can't execute statement: $DBI::errstr";
+	$tquery = "insert into Transactions values('',$1,0,'Status','Status','open','new','','$mapuid','$rtdate','RT::Ticket',NULL,NULL,NULL)";
+        $sth = $dbh->prepare($tquery) or die "Can't prepare queue query";
+        $rc = $sth->execute || die "Can't execute statement: $DBI::errstr";
+}
+elsif ($param=~m/^R(.*)/) {
+	&dienice unless $1;
+        print "Rejecting Ticket $1\n";
+        $query = "update Tickets set Status='rejected' where id=$1;";
+        my $sth = $dbh->prepare($query) or die "Can't prepare queue query";
+        my $rc = $sth->execute || die "Can't execute statement: $DBI::errstr";
+	$tquery = "insert into Transactions values('',$1,0,'Status','Status','new','rejected','','$mapuid','$rtdate','RT::Ticket',NULL,NULL,NULL)";
+        $sth = $dbh->prepare($tquery) or die "Can't prepare queue query";
+        $rc = $sth->execute || die "Can't execute statement: $DBI::errstr";
+}
+elsif ($param=~m/^d(.*)/) {
+	&dienice unless $1;
+        print "Deleting Ticket $1\n";
+        $query = "update Tickets set Status='deleted' where id=$1;";
+        my $sth = $dbh->prepare($query) or die "Can't prepare queue query";
+        my $rc = $sth->execute || die "Can't execute statement: $DBI::errstr";
+	$tquery = "insert into Transactions values('',$1,0,'Status','Status','open','deleted','','$mapuid','$rtdate','RT::Ticket',NULL,NULL,NULL)";
+        $sth = $dbh->prepare($tquery) or die "Can't prepare queue query";
+        $rc = $sth->execute || die "Can't execute statement: $DBI::errstr";
+}
+elsif ($param=~m/^s(.*)/) {
+	&dienice unless $1;
+        print "Stalling Ticket $1\n";
+        $query = "update Tickets set Status='stalled' where id=$1;";
+        my $sth = $dbh->prepare($query) or die "Can't prepare queue query";
+        my $rc = $sth->execute || die "Can't execute statement: $DBI::errstr";
+	$tquery = "insert into Transactions values('',$1,0,'Status','Status','open','stalled','','$mapuid','$rtdate','RT::Ticket',NULL,NULL,NULL)";
+        $sth = $dbh->prepare($tquery) or die "Can't prepare queue query";
+        $rc = $sth->execute || die "Can't execute statement: $DBI::errstr";
+}
+elsif ($param=~m/^t(\d+)(\D+)/) {
+	&dienice unless $1;
+        print "Transferring Queue of Ticket $1 to $2\n";
+        $ticket=$1;
+        $queue=$2;
+        $queueidref = $dbh->selectall_arrayref("select id from Queues where name='$2';");
+        foreach (@{$queueidref}) { foreach (@{$_}) { $queueid = $_; }};
+
+        unless ($queueid) {
+                print "Queue $2 not found!\n";
+                exit;
+        }
+
+        $query = "update Tickets set Queue='$queueid' where id=$ticket;";
+        my $sth = $dbh->prepare($query) or die "Can't prepare queue query";
+        my $rc = $sth->execute || die "Can't execute statement: $DBI::errstr";
+	$tquery = "insert into Transactions values('',$1,0,'Set','Queue',0,'$2','','$mapuid','$rtdate','RT::Ticket',NULL,NULL,NULL)";
+        $sth = $dbh->prepare($tquery) or die "Can't prepare queue query";
+        $rc = $sth->execute || die "Can't execute statement: $DBI::errstr";
+}
+elsif ($param=~m/^T(\d+)(\D+)/) {
+	&dienice unless $1;
+	print "Transferring Ownership of Ticket $1 to $2\n";
+	$ticket=$1;
+	$user=$2;
+	$useridref = $dbh->selectall_arrayref("select id from Users where name='$2';");
+	foreach (@{$useridref}) { foreach (@{$_}) { $userid = $_; }};
+
+	unless ($userid) {
+		print "User $2 not found!\n";
+		exit;
+	}
+
+        $query = "update Tickets set Owner='$userid' where id=$ticket;";
+        my $sth = $dbh->prepare($query) or die "Can't prepare queue query";
+        my $rc = $sth->execute || die "Can't execute statement: $DBI::errstr";
+	$tquery = "insert into Transactions values('',$1,0,'Give','Owner',0,'$userid','','$mapuid','$rtdate','RT::Ticket',NULL,NULL,NULL)";
+        $sth = $dbh->prepare($tquery) or die "Can't prepare queue query";
+        $rc = $sth->execute || die "Can't execute statement: $DBI::errstr";
+}
+elsif ($param=~m/^(\d+)/) {
+
+	$ticketref = $dbh->selectall_arrayref("select id,Subject,Status from Tickets where id='$1';");
+	foreach (@{$ticketref}) { foreach (@{$_}) { push (@ta1,$_) }};
+	$subject=$ta1[1];
+	$status=$ta1[2];
+	print "******************************************************************\n";
+	print "TICKET ID $1 ($subject) - STATUS = ($status)\n";
+	print "******************************************************************\n\n\n";
+	$transactionsref = $dbh->selectall_arrayref("select id from Transactions where ObjectID='$1' and ObjectType='RT::Ticket';");
+	foreach (@{$transactionsref}) { foreach (@{$_}) {
+		$attachmentsarrayref = $dbh->selectall_arrayref("select Attachments.id,Users.Realname,Attachments.Created,Attachments.content from Attachments inner join Users on Attachments.Creator = Users.id where Attachments.Transactionid='$_'");
+		foreach(@{$attachmentsarrayref}) {
+			$attid=${@{$_}}[0];
+			$attuser=${@{$_}}[1];
+			$attcreated=${@{$_}}[2];
+			$attcontent=${@{$_}}[3];
+			print "--------------------------------------------------------------------------------\n";
+			print "$attcreated ($attuser)\n";
+			print "--------------------------------------------------------------------------------\n\n";
+			print "$attcontent\n";
+		}
+		
+}}}
+
+
+else { exit; }
+
+
+sub dienice {
+
+		print "Invalid argument, please finger @host for correct command usage.\n";
+		print "<<<< KTHXBYE!\n";
+		exit;
+
+}	
